@@ -4,4 +4,24 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "accelerate==0.30.1",
+    "einops>=0.8.0",
+    "flash-attn==2.5.8",
+    "lightning>2.3.1",
+    "lpips==0.1.4",
+    "matplotlib>=3.9.2",
+    "mup",
+    "ninja>=1.11.1.1",
+    "packaging>=24.1",
+    "torch==2.3.0",
+    "torchvision==0.18.0",
+    "tqdm==4.66.4",
+    "transformers==4.41.0",
+    "wandb>=0.18.6",
+    "wheel>=0.44.0",
+    "xformers==0.0.26.post1",
+]
+
+[tool.uv.sources]
+mup = { git = "https://github.com/janEbert/mup.git", rev = "fsdp-fix" }
