@@ -1,16 +1,49 @@
+# %%
 import torch
 import torch.nn as nn
 
 from magvit2.config import VQConfig
 
 
-def swish(x):
+# %%
+def swish(x: torch.Tensor) -> torch.Tensor:
     # swish
     return x * torch.sigmoid(x)
 
 
+if __name__ == "__main__":
+    x = torch.randn(size=(2, 3, 128, 128))
+    y = swish(x)
+    # Plot swish activation
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    x_plot = np.linspace(-6, 6, 100)
+
+    sigmoid = 1 / (1 + np.exp(-x_plot))
+    y_plot = swish(torch.tensor(x_plot))
+    y_plot = y_plot.numpy()
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(x_plot, y_plot, label="swish(x)")
+    plt.plot(x_plot, x_plot, "--", label="x", alpha=0.5)  # Plot identity for reference
+    plt.plot(x_plot, sigmoid, "--", label="sigmoid(x)", alpha=0.5)  # Plot sigmoid for comparison
+
+    plt.grid(True)
+    plt.legend()
+    plt.title("Swish Activation Function")
+    plt.xlabel("x")
+    plt.ylabel("swish(x)")
+    # plt.savefig("swish.png")
+    plt.show()
+    # plt.close()
+    print(y.shape)
+
+# %%
+
+
 class ResBlock(nn.Module):
-    def __init__(self, in_filters, out_filters, use_conv_shortcut=False) -> None:
+    def __init__(self, in_filters: int, out_filters: int, use_conv_shortcut: bool = False) -> None:
         super().__init__()
 
         self.in_filters = in_filters
@@ -33,7 +66,7 @@ class ResBlock(nn.Module):
                     in_filters, out_filters, kernel_size=(1, 1), padding=0, bias=False
                 )
 
-    def forward(self, x, **kwargs):
+    def forward(self, x: torch.Tensor, **kwargs) -> torch.Tensor:
         residual = x
 
         x = self.norm1(x)
@@ -193,7 +226,7 @@ def depth_to_space(x: torch.Tensor, block_size: int) -> torch.Tensor:
     """
     # check inputs
     if x.dim() < 3:
-        raise ValueError(f"Expecting a channels-first (*CHW) tensor of at least 3 dimensions")
+        raise ValueError("Expecting a channels-first (*CHW) tensor of at least 3 dimensions")
     c, h, w = x.shape[-3:]
 
     s = block_size**2
