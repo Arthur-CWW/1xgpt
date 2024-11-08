@@ -1,4 +1,5 @@
 # %%
+import sys
 import torch
 import torch.nn as nn
 
@@ -82,6 +83,89 @@ class ResBlock(nn.Module):
                 residual = self.nin_shortcut(residual)
 
         return x + residual
+
+
+if __name__ == "__main__":
+    x = torch.randn(size=(2, 3, 128, 128))  # [B, C, H, W]
+    # Demonstrate GroupNorm effects
+    import matplotlib.pyplot as plt
+    import torch.nn.functional as F
+
+    # Create sample feature maps
+    x = 500 * torch.randn(2, 32, 64, 64) + 100  # batch_size=2, channels=32, height=64, width=64
+
+    # Apply GroupNorm with different numbers of groups
+    gn2 = nn.GroupNorm(num_groups=2, num_channels=32, eps=1e-6)
+    # gn4 = nn.GroupNorm(num_groups=4, num_channels=32, eps=1e-6)
+    # gn8 = nn.GroupNorm(num_groups=8, num_channels=32, eps=1e-6)
+
+    out2: torch.Tensor = gn2(x)
+    # out4: torch.Tensor = gn4(x)
+    # out8: torch.Tensor = gn8(x)
+
+    # # Plot original and normalized feature maps
+    # plt.figure(figsize=(15, 5))
+
+    # plt.subplot(121)
+    # # plt.imshow(x[0, :3].permute(1, 2, 0).detach().numpy())
+    # plt.imshow(x[0, :3].permute(1, 2, 0).detach().numpy())
+    # plt.subplot(122)
+    ex = out2[0, :3].detach()
+    ex2 = out2[0, :3].transpose(0, 2).detach()
+    ex3 = out2[0, :3].permute(1, 2, 0).detach()
+    import einops
+
+    ex4 = einops.rearrange(out2, "b c h w ->b h w c")
+    sl = ex4[..., 0, 0]
+    slu = einops.reduce(sl, "b h w -> h w", "mean")
+    print(ex.shape, ex2.shape, ex3.shape)
+    assert sl
+    print(ex4.shape, sl.shape)
+
+    raise
+    plt.imshow(ex, cmap="gray")
+    plt.title("GroupNorm (2 groups)")
+    plt.colorbar()
+    for _ in range(2):
+        print(f"channel {_}:", x[_, 0].mean().item(), x[_, 0].std().item())
+
+    print(x.mean().item(), x.std().item())
+    print(x.shape, x.shape)
+    print(x.mean(dim=0).shape, x.std(dim=1).shape)
+    print(x.mean(dim=(1, 2)).shape, x.std(dim=1).shape)
+    print(out2.mean(dim=1).shape, out2.std(dim=1).shape)
+
+    # for i in range(2):
+    #     plt.subplot(142)
+    #     plt.imshow(out2[i, 0].detach().numpy())
+    #     plt.title("GroupNorm (2 groups)")
+    #     plt.colorbar()
+
+    # plt.subplot(143)
+    # plt.imshow(out4[0, 0].detach().numpy())
+    # plt.title("GroupNorm (4 groups)")
+    # plt.colorbar()
+
+    # plt.subplot(144)
+    # plt.imshow(out8[0, 0].detach().numpy())
+    # plt.title("GroupNorm (8 groups)")
+    # plt.colorbar()
+
+    # plt.tight_layout()
+    # plt.show()
+
+    # # Print statistics to show normalization effect
+    # print("Original stats:")
+    # print(f"Mean: {x.mean():.3f}, Std: {x.std():.3f}")
+    # print("\nAfter GroupNorm (2 groups):")
+    # print(f"Mean: {out2.mean():.3f}, Std: {out2.std():.3f}")
+    # print("\nAfter GroupNorm (4 groups):")
+    # print(f"Mean: {out4.mean():.3f}, Std: {out4.std():.3f}")
+    # print("\nAfter GroupNorm (8 groups):")
+    # print(f"Mean: {out8.mean():.3f}, Std: {out8.std():.3f}")
+# resblock = ResBlock(in_filters=3, out_filters=3)
+# y = resblock(x)
+# print(y.shape)
 
 
 class Encoder(nn.Module):
@@ -271,3 +355,5 @@ class Upsampler(nn.Module):
 #     decoder = Decoder(out_ch=3, z_channels=18, num_res_blocks=2, ch=128, in_channels=3, resolution=128)
 #     z = encoder(x)
 #     out = decoder(z)
+
+# %%
