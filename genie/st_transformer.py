@@ -1,7 +1,10 @@
+# %%
 from torch import nn, Tensor
 from einops import rearrange
 
 from genie.attention import SelfAttention
+
+# %%
 
 
 class Mlp(nn.Module):
@@ -23,6 +26,9 @@ class Mlp(nn.Module):
         x = self.drop(self.act(self.fc1(x)))
         x = self.drop(self.fc2(x))
         return x
+
+
+# %%
 
 
 class STBlock(nn.Module):
@@ -123,3 +129,29 @@ class STTransformerDecoder(nn.Module):
             x = layer(x)
 
         return x
+
+
+if __name__ == "__main__":
+    import torch
+    import os
+
+    # interesting xformer only works on cuda
+    st_transformer = STTransformerDecoder(
+        num_layers=32,
+        num_heads=8,
+        d_model=256,
+        qkv_bias=False,
+        proj_bias=True,
+        qk_norm=True,
+        use_mup=True,
+        attn_drop=0.0,
+        mlp_ratio=4.0,
+        mlp_bias=True,
+        mlp_drop=0.0,
+    )
+    x = torch.randn(1, 16, 16, 256)
+    y = st_transformer(x)
+    print(y.shape)  # (1, 16, 16, 256)
+
+
+# %%

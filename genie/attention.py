@@ -5,6 +5,7 @@ import os
 
 
 XFORMERS_DISABLED = os.environ.get("XFORMERS_DISABLED", "false").lower() == "true"
+# XFORMERS_DISABLED = True
 
 
 class BasicSelfAttention(nn.Module):
