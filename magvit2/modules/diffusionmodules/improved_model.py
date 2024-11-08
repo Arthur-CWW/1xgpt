@@ -6,15 +6,11 @@ from magvit2.config import VQConfig
 
 def swish(x):
     # swish
-    return x*torch.sigmoid(x)
+    return x * torch.sigmoid(x)
 
 
 class ResBlock(nn.Module):
-    def __init__(self, 
-                 in_filters,
-                 out_filters,
-                 use_conv_shortcut = False
-                 ) -> None:
+    def __init__(self, in_filters, out_filters, use_conv_shortcut=False) -> None:
         super().__init__()
 
         self.in_filters = in_filters
@@ -29,9 +25,13 @@ class ResBlock(nn.Module):
 
         if in_filters != out_filters:
             if self.use_conv_shortcut:
-                self.conv_shortcut = nn.Conv2d(in_filters, out_filters, kernel_size=(3, 3), padding=1, bias=False)
+                self.conv_shortcut = nn.Conv2d(
+                    in_filters, out_filters, kernel_size=(3, 3), padding=1, bias=False
+                )
             else:
-                self.nin_shortcut = nn.Conv2d(in_filters, out_filters, kernel_size=(1, 1), padding=0, bias=False)
+                self.nin_shortcut = nn.Conv2d(
+                    in_filters, out_filters, kernel_size=(1, 1), padding=0, bias=False
+                )
 
     def forward(self, x, **kwargs):
         residual = x
@@ -54,7 +54,8 @@ class ResBlock(nn.Module):
 class Encoder(nn.Module):
     def __init__(
         # self, *, ch, out_ch, in_channels, num_res_blocks, z_channels, ch_mult=(1, 2, 2, 4),
-        self, config: VQConfig,
+        self,
+        config: VQConfig,
     ):
         super().__init__()
 
@@ -63,13 +64,13 @@ class Encoder(nn.Module):
 
         self.num_res_blocks = config.num_res_blocks
         self.num_blocks = len(config.ch_mult)
-        
+
         self.conv_in = nn.Conv2d(
             config.in_channels,
             config.base_channels,
             kernel_size=(3, 3),
             padding=1,
-            bias=False
+            bias=False,
         )
 
         ## construct the model
@@ -83,34 +84,36 @@ class Encoder(nn.Module):
             for _ in range(self.num_res_blocks):
                 block.append(ResBlock(block_in, block_out))
                 block_in = block_out
-            
+
             down = nn.Module()
             down.block = block
             if i_level < self.num_blocks - 1:
-                down.downsample = nn.Conv2d(block_out, block_out, kernel_size=(3, 3), stride=(2, 2), padding=1)
+                down.downsample = nn.Conv2d(
+                    block_out, block_out, kernel_size=(3, 3), stride=(2, 2), padding=1
+                )
 
             self.down.append(down)
-        
+
         ### mid
         self.mid_block = nn.ModuleList()
         for res_idx in range(self.num_res_blocks):
             self.mid_block.append(ResBlock(block_in, block_in))
-        
+
         ### end
         self.norm_out = nn.GroupNorm(32, block_out, eps=1e-6)
         self.conv_out = nn.Conv2d(block_out, config.z_channels, kernel_size=(1, 1))
-            
+
     def forward(self, x):
         ## down
         x = self.conv_in(x)
         for i_level in range(self.num_blocks):
             for i_block in range(self.num_res_blocks):
                 x = self.down[i_level].block[i_block](x)
-            
+
             if i_level < self.num_blocks - 1:
                 x = self.down[i_level].downsample(x)
-        
-        ## mid 
+
+        ## mid
         for res in range(self.num_res_blocks):
             x = self.mid_block[res](x)
 
@@ -139,7 +142,7 @@ class Decoder(nn.Module):
         self.mid_block = nn.ModuleList()
         for res_idx in range(self.num_res_blocks):
             self.mid_block.append(ResBlock(block_in, block_in))
-        
+
         self.up = nn.ModuleList()
 
         for i_level in reversed(range(self.num_blocks)):
@@ -148,33 +151,32 @@ class Decoder(nn.Module):
             for i_block in range(self.num_res_blocks):
                 block.append(ResBlock(block_in, block_out))
                 block_in = block_out
-            
+
             up = nn.Module()
             up.block = block
             if i_level > 0:
                 up.upsample = Upsampler(block_in)
             self.up.insert(0, up)
-        
+
         self.norm_out = nn.GroupNorm(32, block_in, eps=1e-6)
 
         self.conv_out = nn.Conv2d(block_in, config.out_channels, kernel_size=(3, 3), padding=1)
-    
-    def forward(self, z):
 
+    def forward(self, z):
         z = self.conv_in(z)
 
         ## mid
         for res in range(self.num_res_blocks):
             z = self.mid_block[res](z)
-        
+
         ## upsample
         for i_level in reversed(range(self.num_blocks)):
             for i_block in range(self.num_res_blocks):
                 z = self.up[i_level].block[i_block](z)
-            
+
             if i_level > 0:
                 z = self.up[i_level].upsample(z)
-        
+
         z = self.norm_out(z)
         z = swish(z)
         z = self.conv_out(z)
@@ -183,17 +185,15 @@ class Decoder(nn.Module):
 
 
 def depth_to_space(x: torch.Tensor, block_size: int) -> torch.Tensor:
-    """ Depth-to-Space DCR mode (depth-column-row) core implementation.
+    """Depth-to-Space DCR mode (depth-column-row) core implementation.
 
-        Args:
-            x (torch.Tensor): input tensor. The channels-first (*CHW) layout is supported.
-            block_size (int): block side size
+    Args:
+        x (torch.Tensor): input tensor. The channels-first (*CHW) layout is supported.
+        block_size (int): block side size
     """
     # check inputs
     if x.dim() < 3:
-        raise ValueError(
-            f"Expecting a channels-first (*CHW) tensor of at least 3 dimensions"
-        )
+        raise ValueError(f"Expecting a channels-first (*CHW) tensor of at least 3 dimensions")
     c, h, w = x.shape[-3:]
 
     s = block_size**2
@@ -211,18 +211,13 @@ def depth_to_space(x: torch.Tensor, block_size: int) -> torch.Tensor:
     x = x.permute(0, 3, 4, 1, 5, 2)
 
     # merging the two new dimensions with H and W
-    x = x.contiguous().view(*outer_dims, c // s, h * block_size,
-                            w * block_size)
+    x = x.contiguous().view(*outer_dims, c // s, h * block_size, w * block_size)
 
     return x
 
 
 class Upsampler(nn.Module):
-    def __init__(
-        self,
-        dim,
-        dim_out = None
-    ):
+    def __init__(self, dim, dim_out=None):
         super().__init__()
         dim_out = dim * 4
         self.conv1 = nn.Conv2d(dim, dim_out, (3, 3), padding=1)
@@ -235,7 +230,7 @@ class Upsampler(nn.Module):
         out = self.conv1(x)
         out = self.depth2space(out, block_size=2)
         return out
-        
+
 
 # if __name__ == "__main__":
 #     x = torch.randn(size = (2, 3, 128, 128))

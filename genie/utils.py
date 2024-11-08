@@ -15,6 +15,8 @@ def convert_lightning_checkpoint(lightning_checkpoint, num_layers, num_heads, d_
     model_state_dict = lightning_checkpoint["state_dict"]
 
     # Remove `model.` prefix
-    model_state_dict = {name.replace("model.", ""): params for name, params in model_state_dict.items()}
+    model_state_dict = {
+        name.replace("model.", ""): params for name, params in model_state_dict.items()
+    }
     model.load_state_dict(model_state_dict)
     model.save_pretrained(save_dir)

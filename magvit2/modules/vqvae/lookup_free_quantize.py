@@ -5,7 +5,7 @@ Proposed in https://arxiv.org/abs/2310.05737
 In the simplest setup, each dimension is quantized into {-1, 1}.
 An entropy penalty is used to encourage utilization.
 
-Refer to 
+Refer to
 https://github.com/lucidrains/vector-quantize-pytorch/blob/master/vector_quantize_pytorch/lookup_free_quantization.py
 https://github.com/theAdamColton/ijepa-enhanced/blob/7edef5f7288ae8f537f0db8a10044a2a487f70c9/ijepa_enhanced/lfq.py
 """
@@ -28,12 +28,17 @@ from magvit2.config import VQConfig
 
 # constants
 
-LossBreakdown = namedtuple('LossBreakdown', ['per_sample_entropy', 'codebook_entropy', 'commitment', 'avg_probs'])
+LossBreakdown = namedtuple(
+    "LossBreakdown",
+    ["per_sample_entropy", "codebook_entropy", "commitment", "avg_probs"],
+)
 
 # helper functions
 
+
 def exists(v):
     return v is not None
+
 
 def default(*args):
     for arg in args:
@@ -41,18 +46,24 @@ def default(*args):
             return arg() if callable(arg) else arg
     return None
 
+
 def pack_one(t, pattern):
     return pack([t], pattern)
+
 
 def unpack_one(t, ps, pattern):
     return unpack(t, ps, pattern)[0]
 
+
 # entropy
+
 
 def entropy(prob):
     return (-prob * torch.log(prob + 1e-5)).sum(dim=-1)
 
+
 # class
+
 
 def mult_along_first_dims(x, y):
     """
@@ -62,6 +73,7 @@ def mult_along_first_dims(x, y):
     for _ in range(ndim_to_expand):
         y = y.unsqueeze(-1)
     return x * y
+
 
 def masked_mean(x, m):
     """
@@ -78,6 +90,7 @@ def masked_mean(x, m):
     x = mult_along_first_dims(x, m)
     x = x / m.sum()
     return x.sum(tuple(range(m.ndim)))
+
 
 def entropy_loss(
     logits,
@@ -111,9 +124,7 @@ def entropy_loss(
     else:
         sample_entropy = torch.mean(sample_entropy)
 
-    loss = (sample_minimization_weight * sample_entropy) - (
-        batch_maximization_weight * avg_entropy
-    )
+    loss = (sample_minimization_weight * sample_entropy) - (batch_maximization_weight * avg_entropy)
 
     return sample_entropy, avg_entropy, loss
 
@@ -124,12 +135,14 @@ class LFQ(Module):
 
         # some assert validations
 
-        assert exists(config.z_channels) or exists(config.codebook_size), \
-            "either dim or codebook_size must be specified for LFQ"
-        assert not exists(config.codebook_size) or log2(config.codebook_size).is_integer(), \
-            f"your codebook size must be a power of 2 for lookup free quantization (suggested {2 ** ceil(log2(config.codebook_size))})"
+        assert exists(config.z_channels) or exists(
+            config.codebook_size
+        ), "either dim or codebook_size must be specified for LFQ"
+        assert (
+            not exists(config.codebook_size) or log2(config.codebook_size).is_integer()
+        ), f"your codebook size must be a power of 2 for lookup free quantization (suggested {2 ** ceil(log2(config.codebook_size))})"
 
-        self.codebook_size = default(config.codebook_size, lambda: 2 ** dim)
+        self.codebook_size = default(config.codebook_size, lambda: 2**dim)
         self.codebook_dim = int(log2(config.codebook_size))
 
         codebook_dims = self.codebook_dim * config.num_codebooks
@@ -141,7 +154,7 @@ class LFQ(Module):
         self.dim = dim
         self.codebook_dim = self.codebook_dim
         self.num_codebooks = config.num_codebooks
-        
+
         # for entropy loss
         self.sample_minimization_weight = config.sample_minimization_weight
         self.batch_maximization_weight = config.batch_maximization_weight
@@ -149,24 +162,28 @@ class LFQ(Module):
         # for no auxiliary loss, during inference
         self.token_factorization = config.token_factorization  # only utilized in second stage
         if not self.token_factorization:  # for first stage model
-            self.register_buffer('mask', 2 ** torch.arange(self.codebook_dim - 1, -1, -1), persistent=False)
+            self.register_buffer(
+                "mask",
+                2 ** torch.arange(self.codebook_dim - 1, -1, -1),
+                persistent=False,
+            )
         else:
             k = self.codebook_dim // 2
             self.register_buffer("mask", 2 ** torch.arange(k - 1, -1, -1), persistent=False)
 
-        self.register_buffer('zero', torch.tensor(0.), persistent=False)
+        self.register_buffer("zero", torch.tensor(0.0), persistent=False)
 
         # codes
         all_codes = torch.arange(config.codebook_size)
         bits = self.indices_to_bits(all_codes)
         codebook = bits * 2.0 - 1.0
 
-        self.register_buffer('codebook', codebook, persistent=False)
+        self.register_buffer("codebook", codebook, persistent=False)
 
     @property
     def dtype(self):
         return self.codebook.dtype
-    
+
     def indices_to_bits(self, x):
         """
         x: long tensor of indices for constructing codebook, but actually not utilized in all the experiments.
@@ -183,10 +200,12 @@ class LFQ(Module):
             k = self.codebook_dim // 2
             mask = 2 ** torch.arange(k - 1, -1, -1, device=x.device, dtype=torch.long)
         else:
-            mask = 2 ** torch.arange(self.codebook_dim-1, -1, -1, device=x.device, dtype=torch.long)
-        
+            mask = 2 ** torch.arange(
+                self.codebook_dim - 1, -1, -1, device=x.device, dtype=torch.long
+            )
+
         x = (x.unsqueeze(-1) & mask) != 0
-        x = x * 2.0 - 1.0 #back to the float
+        x = x * 2.0 - 1.0  # back to the float
         ## scale back to the desired shape
         b, h, w, c = bhwc
         x = rearrange(x, "b (h w) c -> b h w c", h=h, w=w, c=c)
@@ -208,7 +227,7 @@ class LFQ(Module):
             device=bits.device,
         )
         return (bits * indices).sum(-1)
-    
+
     def decode(self, x):
         """
         x: ... NH
@@ -238,11 +257,11 @@ class LFQ(Module):
         d - feature dimension, which is also log2(codebook size)
         c - number of codebook dim
         """
-        x = rearrange(x, 'b d ... -> b ... d')
-        x, ps = pack_one(x, 'b * d')
+        x = rearrange(x, "b d ... -> b ... d")
+        x, ps = pack_one(x, "b * d")
         # split out number of codebooks
 
-        x = rearrange(x, 'b n (c d) -> b n c d', c=self.num_codebooks)
+        x = rearrange(x, "b n (c d) -> b n c d", c=self.num_codebooks)
 
         codebook_value = torch.Tensor([1.0]).to(device=x.device, dtype=x.dtype)
         quantized = torch.where(x > 0, codebook_value, -codebook_value)  # higher than 0 filled
@@ -250,32 +269,40 @@ class LFQ(Module):
         # calculate indices
         if self.token_factorization:
             k = self.codebook_dim // 2
-            indices_pre = reduce((quantized[..., :k] > 0).int() * self.mask.int(), "b n c d -> b n c", "sum")
-            indices_post = reduce((quantized[..., k:] > 0).int() * self.mask.int(), "b n c d -> b n c", "sum")
+            indices_pre = reduce(
+                (quantized[..., :k] > 0).int() * self.mask.int(),
+                "b n c d -> b n c",
+                "sum",
+            )
+            indices_post = reduce(
+                (quantized[..., k:] > 0).int() * self.mask.int(),
+                "b n c d -> b n c",
+                "sum",
+            )
             # indices_post = 2**k + indices_post #shifter to the 1024
         else:
-            indices = reduce((quantized > 0).int() * self.mask.int(), 'b n c d -> b n c', 'sum')
+            indices = reduce((quantized > 0).int() * self.mask.int(), "b n c d -> b n c", "sum")
 
         # entropy aux loss
 
         if self.training and return_loss:
-            logits = 2 * einsum('... i d, j d -> ... i j', x, self.codebook)
+            logits = 2 * einsum("... i d, j d -> ... i j", x, self.codebook)
             # the same as Euclidean distance up to a constant
             per_sample_entropy, codebook_entropy, entropy_aux_loss = entropy_loss(
                 logits=logits,
                 sample_minimization_weight=self.sample_minimization_weight,
-                batch_maximization_weight=self.batch_maximization_weight
+                batch_maximization_weight=self.batch_maximization_weight,
             )
 
             avg_probs = self.zero
         else:
             ## calculate the codebook_entropy needed for one batch evaluation
-            #------------------------------------------------------------------
+            # ------------------------------------------------------------------
             # logits = 2 * einsum('... i d, j d -> ... i j', x, self.codebook)
             # probs = F.softmax(logits / 0.01, -1)
             # avg_probs = reduce(probs, "b n c d -> b d", "mean")
             # avg_probs = torch.sum(avg_probs, 0) #batch dimension
-            #-------------------------------------------------------------------
+            # -------------------------------------------------------------------
             # if not training, just return dummy 0
             per_sample_entropy = codebook_entropy = self.zero
             entropy_aux_loss = self.zero
@@ -284,7 +311,7 @@ class LFQ(Module):
         # commit loss
 
         if self.training:
-            commit_loss = F.mse_loss(x, quantized.detach(), reduction='none')
+            commit_loss = F.mse_loss(x, quantized.detach(), reduction="none")
 
             if exists(mask):
                 commit_loss = commit_loss[mask]
@@ -297,11 +324,11 @@ class LFQ(Module):
         quantized = x + (quantized - x).detach()  # transfer to quantized
 
         # merge back codebook dim
-        quantized = rearrange(quantized, 'b n c d -> b n (c d)')
+        quantized = rearrange(quantized, "b n c d -> b n (c d)")
 
         # reconstitute image or video dimensions
-        quantized = unpack_one(quantized, ps, 'b * d')
-        quantized = rearrange(quantized, 'b ... d -> b d ...')
+        quantized = unpack_one(quantized, ps, "b * d")
+        quantized = rearrange(quantized, "b ... d -> b d ...")
 
         if self.token_factorization:
             indices_pre = unpack_one(indices_pre, ps, "b * c")
@@ -310,7 +337,7 @@ class LFQ(Module):
             indices_post = indices_post.flatten()
             indices = (indices_pre, indices_post)
         else:
-            indices = unpack_one(indices, ps, 'b * c')
+            indices = unpack_one(indices, ps, "b * c")
             indices = indices.flatten()
 
         ret = (quantized, entropy_aux_loss, indices)

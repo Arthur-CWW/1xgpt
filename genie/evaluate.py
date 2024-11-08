@@ -35,32 +35,39 @@ STRIDE = 15  # Data is 30 Hz so with stride 15, video is 2 Hz
 def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate GENIE-style models.")
     parser.add_argument(
-        "--val_data_dir", type=str, default="data/val_v1.1",
-        help="A directory with video data, should have a `metadata.json` and `video.bin`."
+        "--val_data_dir",
+        type=str,
+        default="data/val_v1.1",
+        help="A directory with video data, should have a `metadata.json` and `video.bin`.",
     )
     parser.add_argument(
-        "--checkpoint_dir", type=str,
-        help="Path to a HuggingFace-style checkpoint."
+        "--checkpoint_dir", type=str, help="Path to a HuggingFace-style checkpoint."
     )
     parser.add_argument(
-        "--batch_size", type=int, default=16,
-        help="Batch size, current script only supports a single GPU."
+        "--batch_size",
+        type=int,
+        default=16,
+        help="Batch size, current script only supports a single GPU.",
     )
     parser.add_argument(
         "--maskgit_steps", type=int, default=2, help="Number of MaskGIT sampling steps."
     )
     parser.add_argument(
-        "--temperature", type=float, default=0,
-        help="Sampling temperature. If `temperature` <= 1e-8, will do greedy sampling."
+        "--temperature",
+        type=float,
+        default=0,
+        help="Sampling temperature. If `temperature` <= 1e-8, will do greedy sampling.",
     )
     parser.add_argument(
-        "--save_outputs_dir", type=str,
+        "--save_outputs_dir",
+        type=str,
         help="Debug option. If specified, will save model predictions and ground truths to this directory. "
-             "Specifically, will save `{pred_frames,pred_logits,gtruth_frames,gtruth_tokens}.pt`"
+        "Specifically, will save `{pred_frames,pred_logits,gtruth_frames,gtruth_tokens}.pt`",
     )
     parser.add_argument(
-        "--max_examples", type=int,
-        help="If specified, will stop evaluation early after `max_examples` examples."
+        "--max_examples",
+        type=int,
+        help="If specified, will stop evaluation early after `max_examples` examples.",
     )
 
     return parser.parse_args()
@@ -79,7 +86,9 @@ class GenieEvaluator:
         self.device = device
         self.args = args
 
-    def predict_zframe_logits(self, input_ids: torch.LongTensor) -> tuple[torch.LongTensor, torch.FloatTensor]:
+    def predict_zframe_logits(
+        self, input_ids: torch.LongTensor
+    ) -> tuple[torch.LongTensor, torch.FloatTensor]:
         """
         Conditioned on each prefix: [frame_0], [frame_0, frame_1], ..., [frame_0, frame_1, ... frame_{T-1}],
         predict the tokens in the following frame: [pred_frame_1, pred_frame_2, ..., pred_frame_T].
@@ -100,8 +109,13 @@ class GenieEvaluator:
                 size (B, 512, 2, T-1, H, W) corresponding to the predicted logits.
                 Note that we are factorizing the 2**18 vocabulary into two separate vocabularies of size 512 each.
         """
-        inputs_THW = rearrange(input_ids, "b (t h w) -> b t h w", t=WINDOW_SIZE,
-                               h=self.args.latent_h, w=self.args.latent_w).to(self.device)
+        inputs_THW = rearrange(
+            input_ids,
+            "b (t h w) -> b t h w",
+            t=WINDOW_SIZE,
+            h=self.args.latent_h,
+            w=self.args.latent_w,
+        ).to(self.device)
         all_samples = []
         all_logits = []
         for timestep in range(1, WINDOW_SIZE):
@@ -111,7 +125,9 @@ class GenieEvaluator:
 
             # MaskGIT sampling
             samples_HW, factored_logits = self.model.maskgit_generate(
-                inputs_masked, out_t=timestep, maskgit_steps=self.args.maskgit_steps,
+                inputs_masked,
+                out_t=timestep,
+                maskgit_steps=self.args.maskgit_steps,
                 temperature=self.args.temperature,
             )
 
@@ -147,16 +163,22 @@ def main():
     transformers.set_seed(42)
     args = parse_args()
 
-    val_dataset = RawTokenDataset(args.val_data_dir, window_size=WINDOW_SIZE, stride=STRIDE, filter_overlaps=True)
+    val_dataset = RawTokenDataset(
+        args.val_data_dir, window_size=WINDOW_SIZE, stride=STRIDE, filter_overlaps=True
+    )
     args.latent_h = args.latent_w = val_dataset.metadata["s"]
 
     decode_latents = decode_latents_wrapper()
-    lpips_alex = lpips.LPIPS(net="alex")  # Calculate LPIPS w/ AlexNet, which is the fastest model out of their options
+    lpips_alex = lpips.LPIPS(
+        net="alex"
+    )  # Calculate LPIPS w/ AlexNet, which is the fastest model out of their options
 
     if args.max_examples is not None:
-        val_dataset.valid_start_inds = val_dataset.valid_start_inds[:args.max_examples]
+        val_dataset.valid_start_inds = val_dataset.valid_start_inds[: args.max_examples]
 
-    dataloader = DataLoader(val_dataset, collate_fn=default_data_collator, batch_size=args.batch_size)
+    dataloader = DataLoader(
+        val_dataset, collate_fn=default_data_collator, batch_size=args.batch_size
+    )
 
     evaluator = GenieEvaluator(args, decode_latents)
     metrics = defaultdict(AvgMetric)
@@ -166,8 +188,13 @@ def main():
 
     for batch in tqdm(dataloader):
         batch_size = batch["input_ids"].size(0)
-        reshaped_input_ids = rearrange(batch["input_ids"], "b (t h w) -> b t h w", t=WINDOW_SIZE,
-                                       h=args.latent_h, w=args.latent_w)
+        reshaped_input_ids = rearrange(
+            batch["input_ids"],
+            "b (t h w) -> b t h w",
+            t=WINDOW_SIZE,
+            h=args.latent_h,
+            w=args.latent_w,
+        )
 
         start_time = time.time()
         samples, factored_logits = evaluator.predict_zframe_logits(batch["input_ids"])
@@ -186,8 +213,10 @@ def main():
         metrics["dec_time"].update((time.time() - start_time) / frames_per_batch, batch_size)
 
         decoded_gtruth = decode_tokens(reshaped_input_ids, decode_latents)
-        metrics["pred_lpips"].update_list(compute_lpips(decoded_gtruth[:, 1:], pred_frames, lpips_alex))
-        
+        metrics["pred_lpips"].update_list(
+            compute_lpips(decoded_gtruth[:, 1:], pred_frames, lpips_alex)
+        )
+
         print({key: f"{val.mean():.4f}" for key, val in metrics.items()})
         if args.save_outputs_dir is not None:
             outputs_to_save["pred_frames"].append(pred_frames)
@@ -198,10 +227,22 @@ def main():
     if args.save_outputs_dir is not None:
         os.makedirs(args.save_outputs_dir, exist_ok=True)
         save_outputs_dir = Path(args.save_outputs_dir)
-        torch.save(torch.cat(outputs_to_save["pred_frames"], dim=0).cpu(), save_outputs_dir / "pred_frames.pt")
-        torch.save(torch.cat(outputs_to_save["pred_logits"], dim=0).cpu(), save_outputs_dir / "pred_logits.pt")
-        torch.save(torch.cat(outputs_to_save["gtruth_frames"], dim=0).cpu(), save_outputs_dir / "gtruth_frames.pt")
-        torch.save(torch.cat(outputs_to_save["gtruth_tokens"], dim=0).cpu(), save_outputs_dir / "gtruth_tokens.pt")
+        torch.save(
+            torch.cat(outputs_to_save["pred_frames"], dim=0).cpu(),
+            save_outputs_dir / "pred_frames.pt",
+        )
+        torch.save(
+            torch.cat(outputs_to_save["pred_logits"], dim=0).cpu(),
+            save_outputs_dir / "pred_logits.pt",
+        )
+        torch.save(
+            torch.cat(outputs_to_save["gtruth_frames"], dim=0).cpu(),
+            save_outputs_dir / "gtruth_frames.pt",
+        )
+        torch.save(
+            torch.cat(outputs_to_save["gtruth_tokens"], dim=0).cpu(),
+            save_outputs_dir / "gtruth_tokens.pt",
+        )
 
 
 if __name__ == "__main__":

@@ -14,7 +14,10 @@ from magvit2.config import VQConfig
 from magvit2.modules.diffusionmodules.improved_model import Encoder, Decoder
 from magvit2.modules.losses.vqperceptual import VQLPIPSWithDiscriminator
 from magvit2.modules.vqvae.lookup_free_quantize import LFQ
-from magvit2.modules.scheduler.lr_scheduler import Scheduler_LinearWarmup, Scheduler_LinearWarmup_CosineDecay
+from magvit2.modules.scheduler.lr_scheduler import (
+    Scheduler_LinearWarmup,
+    Scheduler_LinearWarmup_CosineDecay,
+)
 from magvit2.modules.ema import LitEma
 
 
@@ -49,12 +52,16 @@ class VQModel(L.LightningModule):
         if monitor is not None:
             self.monitor = monitor
 
-        self.generator_params = list(self.encoder.parameters()) + \
-            list(self.decoder.parameters()) + \
-            list(self.quantize.parameters())
+        self.generator_params = (
+            list(self.encoder.parameters())
+            + list(self.decoder.parameters())
+            + list(self.quantize.parameters())
+        )
 
-        if self.use_ema and stage is None:  #no need to construct ema when training transformer
-            self.model_ema = LitEma(self)  # Note: this means EMA weights are overriden after `init_from_ckpt`.
+        if self.use_ema and stage is None:  # no need to construct ema when training transformer
+            self.model_ema = LitEma(
+                self
+            )  # Note: this means EMA weights are overriden after `init_from_ckpt`.
 
         self.automatic_optimization = False
 
@@ -75,12 +82,15 @@ class VQModel(L.LightningModule):
                 if context is not None:
                     print(f"{context}: Restored training weights")
 
-    def state_dict(self, *args, destination=None, prefix='', keep_vars=False):
+    def state_dict(self, *args, destination=None, prefix="", keep_vars=False):
         """
         save the state_dict and filter out the
         """
-        return {k: v for k, v in super().state_dict(*args, destination, prefix, keep_vars).items() if
-                ("inception_model" not in k and "lpips_vgg" not in k and "lpips_alex" not in k)}
+        return {
+            k: v
+            for k, v in super().state_dict(*args, destination, prefix, keep_vars).items()
+            if ("inception_model" not in k and "lpips_vgg" not in k and "lpips_alex" not in k)
+        }
 
     def init_from_ckpt(self, path, ignore_keys=list(), stage=None):
         sd = torch.load(path, map_location="cpu")["state_dict"]
@@ -91,10 +101,10 @@ class VQModel(L.LightningModule):
                 for k, v in sd.items():
                     if "encoder" in k:
                         if "model_ema" in k:
-                            k = k.replace("model_ema.", "")  #load EMA Encoder or Decoder
+                            k = k.replace("model_ema.", "")  # load EMA Encoder or Decoder
                             new_k = ema_mapping[k]
                             new_params[new_k] = v
-                        s_name = k.replace('.', '')
+                        s_name = k.replace(".", "")
                         ema_mapping.update({s_name: k})
                         continue
                     if "decoder" in k:
@@ -147,18 +157,38 @@ class VQModel(L.LightningModule):
         x_reconstructed, codebook_loss, loss_break = self(x)
 
         # generator
-        aeloss, log_dict_ae = self.loss(codebook_loss, loss_break, x, x_reconstructed, 0, self.global_step,
-                                        last_layer=self.get_last_layer(), split="train")
-        self.manual_backward(aeloss / self.training_args.grad_accum_steps, inputs=self.generator_params)  # https://discuss.pytorch.org/t/how-to-implement-gradient-accumulation-for-gan/112751/4
+        aeloss, log_dict_ae = self.loss(
+            codebook_loss,
+            loss_break,
+            x,
+            x_reconstructed,
+            0,
+            self.global_step,
+            last_layer=self.get_last_layer(),
+            split="train",
+        )
+        self.manual_backward(
+            aeloss / self.training_args.grad_accum_steps, inputs=self.generator_params
+        )  # https://discuss.pytorch.org/t/how-to-implement-gradient-accumulation-for-gan/112751/4
 
         # discriminator
-        discloss, log_dict_disc = self.loss(codebook_loss, loss_break, x, x_reconstructed, 1, self.global_step,
-                                            last_layer=self.get_last_layer(), split="train")  # x_reconstructed gets detached, `codebook_loss` and `loss_break` unused
+        discloss, log_dict_disc = self.loss(
+            codebook_loss,
+            loss_break,
+            x,
+            x_reconstructed,
+            1,
+            self.global_step,
+            last_layer=self.get_last_layer(),
+            split="train",
+        )  # x_reconstructed gets detached, `codebook_loss` and `loss_break` unused
         self.manual_backward(discloss / self.training_args.grad_accum_steps)
 
         # TODO: clip grads?
 
-        if (batch_idx + 1) % self.training_args.grad_accum_steps == 0:  # might not update at end of epoch?
+        if (
+            batch_idx + 1
+        ) % self.training_args.grad_accum_steps == 0:  # might not update at end of epoch?
             opt_gen, opt_disc = self.optimizers()
             scheduler_gen, scheduler_disc = self.lr_schedulers()
 
@@ -197,11 +227,27 @@ class VQModel(L.LightningModule):
         x = self.get_input(batch, self.image_key)
         quant, eloss, indices, loss_break = self.encode(x)
         x_rec = self.decode(quant).clamp(-1, 1)
-        aeloss, log_dict_ae = self.loss(eloss, loss_break, x, x_rec, 0, self.global_step,
-                                        last_layer=self.get_last_layer(), split="val" + suffix)
+        aeloss, log_dict_ae = self.loss(
+            eloss,
+            loss_break,
+            x,
+            x_rec,
+            0,
+            self.global_step,
+            last_layer=self.get_last_layer(),
+            split="val" + suffix,
+        )
 
-        discloss, log_dict_disc = self.loss(eloss, loss_break, x, x_rec, 1, self.global_step,
-                                            last_layer=self.get_last_layer(), split="val" + suffix)
+        discloss, log_dict_disc = self.loss(
+            eloss,
+            loss_break,
+            x,
+            x_rec,
+            1,
+            self.global_step,
+            last_layer=self.get_last_layer(),
+            split="val" + suffix,
+        )
 
         self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=True)
         self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=True)
@@ -211,13 +257,15 @@ class VQModel(L.LightningModule):
     def configure_optimizers(self):
         lr = self.training_args.learning_rate
         adam_betas = (self.training_args.adam_beta_1, self.training_args.adam_beta_2)
-        opt_gen = torch.optim.Adam(self.generator_params,
-                                   lr=lr, betas=adam_betas)
-        opt_disc = torch.optim.Adam(self.loss.discriminator.parameters(),
-                                    lr=lr, betas=adam_betas)
+        opt_gen = torch.optim.Adam(self.generator_params, lr=lr, betas=adam_betas)
+        opt_disc = torch.optim.Adam(self.loss.discriminator.parameters(), lr=lr, betas=adam_betas)
 
         # steps_per_epoch = len(self.trainer.datamodule._train_dataloader()) // self.trainer.world_size
-        steps_per_epoch = len(self.trainer.fit_loop._data_source.instance) // self.trainer.world_size // self.training_args.grad_accum_steps
+        steps_per_epoch = (
+            len(self.trainer.fit_loop._data_source.instance)
+            // self.trainer.world_size
+            // self.training_args.grad_accum_steps
+        )
         if self.trainer.is_global_zero:
             print(f"{steps_per_epoch=}")
         warmup_steps = steps_per_epoch * self.training_args.warmup_epochs
@@ -227,20 +275,38 @@ class VQModel(L.LightningModule):
             return ({"optimizer": opt_gen}, {"optimizer": opt_disc})
 
         if self.training_args.scheduler_type == "linear-warmup":
-            scheduler_ae = torch.optim.lr_scheduler.LambdaLR(opt_gen, Scheduler_LinearWarmup(warmup_steps))
-            scheduler_disc = torch.optim.lr_scheduler.LambdaLR(opt_disc, Scheduler_LinearWarmup(warmup_steps))
+            scheduler_ae = torch.optim.lr_scheduler.LambdaLR(
+                opt_gen, Scheduler_LinearWarmup(warmup_steps)
+            )
+            scheduler_disc = torch.optim.lr_scheduler.LambdaLR(
+                opt_disc, Scheduler_LinearWarmup(warmup_steps)
+            )
 
         elif self.training_args.scheduler_type == "linear-warmup_cosine-decay":
             multipler_min = self.training_args.min_learning_rate / self.training_args.learning_rate
-            scheduler_ae = torch.optim.lr_scheduler.LambdaLR(opt_gen, Scheduler_LinearWarmup_CosineDecay(
-                warmup_steps=warmup_steps, max_steps=training_steps, multipler_min=multipler_min))
-            scheduler_disc = torch.optim.lr_scheduler.LambdaLR(opt_disc, Scheduler_LinearWarmup_CosineDecay(
-                warmup_steps=warmup_steps, max_steps=training_steps, multipler_min=multipler_min))
+            scheduler_ae = torch.optim.lr_scheduler.LambdaLR(
+                opt_gen,
+                Scheduler_LinearWarmup_CosineDecay(
+                    warmup_steps=warmup_steps,
+                    max_steps=training_steps,
+                    multipler_min=multipler_min,
+                ),
+            )
+            scheduler_disc = torch.optim.lr_scheduler.LambdaLR(
+                opt_disc,
+                Scheduler_LinearWarmup_CosineDecay(
+                    warmup_steps=warmup_steps,
+                    max_steps=training_steps,
+                    multipler_min=multipler_min,
+                ),
+            )
         else:
             raise NotImplementedError()
 
-        return {"optimizer": opt_gen, "lr_scheduler": scheduler_ae}, {"optimizer": opt_disc,
-                                                                      "lr_scheduler": scheduler_disc}
+        return {"optimizer": opt_gen, "lr_scheduler": scheduler_ae}, {
+            "optimizer": opt_disc,
+            "lr_scheduler": scheduler_disc,
+        }
 
     def get_last_layer(self):
         return self.decoder.conv_out.weight
@@ -264,5 +330,5 @@ class VQModel(L.LightningModule):
         if not hasattr(self, "colorize"):
             self.register_buffer("colorize", torch.randn(3, x.shape[1], 1, 1).to(x))
         x = F.conv2d(x, weight=self.colorize)
-        x = 2. * (x - x.min()) / (x.max() - x.min()) - 1.
+        x = 2.0 * (x - x.min()) / (x.max() - x.min()) - 1.0
         return x

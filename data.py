@@ -15,14 +15,15 @@ from genie.st_mask_git import cosine_schedule
 
 
 class RawTokenDataset(TorchDataset):
-    """ Loads raw uint32 tokens as memmap-backed array """
+    """Loads raw uint32 tokens as memmap-backed array"""
+
     def __init__(
         self,
         data_dir,
         window_size,
         stride=1,
         filter_interrupts=True,
-        filter_overlaps=False
+        filter_overlaps=False,
     ):
         """
         Args:
@@ -41,8 +42,9 @@ class RawTokenDataset(TorchDataset):
             self.metadata = json.load(f)
 
         shape = (self.metadata["num_images"], self.metadata["s"], self.metadata["s"])
-        video_tokens_path, segment_ids_path, action_tokens_path = [data_dir / f"{name}.bin"
-                                                                   for name in ["video", "segment_ids", "actions"]]
+        video_tokens_path, segment_ids_path, action_tokens_path = [
+            data_dir / f"{name}.bin" for name in ["video", "segment_ids", "actions"]
+        ]
         token_dtype = np.dtype(self.metadata.get("token_dtype", "uint32"))
         self.data = np.memmap(video_tokens_path, dtype=token_dtype, mode="r", shape=shape)
         # self.actions = np.memmap(action_tokens_path, dtype=np.uint16, mode="r", shape=(self.metadata["num_images"],))
@@ -52,12 +54,14 @@ class RawTokenDataset(TorchDataset):
                 segment_ids_path,
                 dtype=np.int32,
                 mode="r",
-                shape=(self.metadata["num_images"],)
+                shape=(self.metadata["num_images"],),
             )
         else:
             self.segment_ids = None
             if filter_interrupts:
-                raise NotImplementedError("Cannot filter interrupted sequences without segment ids.")
+                raise NotImplementedError(
+                    "Cannot filter interrupted sequences without segment ids."
+                )
 
         self.window_size, self.stride = window_size, stride
         # Number of frames between the first and last frames of a video sequence (excluding one endpoint frame)
@@ -67,17 +71,22 @@ class RawTokenDataset(TorchDataset):
         for start_ind in range(len(self.data) - self.video_len):
             # Assuming `segment_ids` is monotonically increasing, a sequence is interrupted
             # if the first and last frames have different segment ids.
-            if not (filter_interrupts and self.segment_ids[start_ind] != self.segment_ids[start_ind + self.video_len]):
+            if not (
+                filter_interrupts
+                and self.segment_ids[start_ind] != self.segment_ids[start_ind + self.video_len]
+            ):
                 self.valid_start_inds.append(start_ind)
 
         if filter_overlaps:
             # Instead of using a sliding window, use each frame at most once
             filtered_start_inds = []
             for start_ind in self.valid_start_inds:
-                overlapping_start_inds = {start_ind - i * self.stride for i in range(1, self.window_size)}
+                overlapping_start_inds = {
+                    start_ind - i * self.stride for i in range(1, self.window_size)
+                }
                 # all sequences from `overlapping_start_inds` will also contain `start_ind`,
                 # so exclude sequence starting from `start_ind` if any of `overlapping_start_inds` is already being used
-                for existing_start_ind in filtered_start_inds[-self.window_size * self.stride:]:
+                for existing_start_ind in filtered_start_inds[-self.window_size * self.stride :]:
                     # Bound could be improved
                     if existing_start_ind in overlapping_start_inds:
                         break
@@ -95,7 +104,9 @@ class RawTokenDataset(TorchDataset):
         spaced `self.stride` apart.
         """
         start_ind = self.valid_start_inds[idx]
-        x = torch.from_numpy((self.data[start_ind : start_ind + self.video_len + 1 : self.stride]).astype(np.int64))
+        x = torch.from_numpy(
+            (self.data[start_ind : start_ind + self.video_len + 1 : self.stride]).astype(np.int64)
+        )
         x = x.flatten()
 
         attention_mask = torch.ones_like(x)
@@ -116,8 +127,7 @@ def get_maskgit_collator(config: GenieConfig):
 
         input_ids = torch.stack([ex["input_ids"] for ex in features])
         device = input_ids.device
-        x_THW = rearrange(input_ids, "b (t h w) -> b t h w", b=len(features), t=config.T,
-                          h=h, w=w)
+        x_THW = rearrange(input_ids, "b (t h w) -> b t h w", b=len(features), t=config.T, h=h, w=w)
         x_THWC = factorize_token_ids(x_THW, config.num_factored_vocabs, config.factored_vocab_size)
         labels = x_THW.clone()
 
@@ -125,8 +135,13 @@ def get_maskgit_collator(config: GenieConfig):
         r = torch.rand(x_THWC.size(), device=device)
         u01 = torch.rand((), device=device)
         random_patches_mask = r < config.max_corrupt_rate * u01
-        random_values = torch.randint(low=0, high=config.factored_vocab_size, size=x_THWC.size(),
-                                      dtype=torch.long, device=device)
+        random_values = torch.randint(
+            low=0,
+            high=config.factored_vocab_size,
+            size=x_THWC.size(),
+            dtype=torch.long,
+            device=device,
+        )
         x_THWC[random_patches_mask] = random_values[random_patches_mask]
 
         if random.random() < config.non_mlm_ratio:  # Closer to autoregressive inference
@@ -141,7 +156,9 @@ def get_maskgit_collator(config: GenieConfig):
                 correct_rate *= random.uniform(0.9, 1.0)
                 r = torch.rand((len(features), h, w, config.num_factored_vocabs), device=device)
                 random_patches_mask = r > correct_rate
-                x_THWC_view[:, i][random_patches_mask] = random_values[:, first_masked_frame + i][random_patches_mask]
+                x_THWC_view[:, i][random_patches_mask] = random_values[:, first_masked_frame + i][
+                    random_patches_mask
+                ]
         else:  # Typical MLM masking
             first_masked_frame = 1
 
@@ -149,7 +166,9 @@ def get_maskgit_collator(config: GenieConfig):
         c = 0
         while mask.max() == 0:  # We could get unlucky and mask no tokens?
             # per-minibatch, per-frame masking probability (could try variable masking rate from MUSE)
-            mask_prob_T = cosine_schedule(torch.rand(len(features), config.T - first_masked_frame, 1, 1))
+            mask_prob_T = cosine_schedule(
+                torch.rand(len(features), config.T - first_masked_frame, 1, 1)
+            )
 
             r = torch.rand_like(x_THW[:, first_masked_frame:], dtype=torch.float)
             mask = r < mask_prob_T
@@ -158,7 +177,9 @@ def get_maskgit_collator(config: GenieConfig):
         if c > 1:
             print(f"Generated mask {c} > 1 times.")
 
-        x_THW = unfactorize_token_ids(x_THWC, config.num_factored_vocabs, config.factored_vocab_size)
+        x_THW = unfactorize_token_ids(
+            x_THWC, config.num_factored_vocabs, config.factored_vocab_size
+        )
         x_THW[:, first_masked_frame:][mask] = mask_token_id
 
         return {

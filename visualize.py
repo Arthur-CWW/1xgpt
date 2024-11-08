@@ -37,22 +37,24 @@ def parse_args():
         type=str,
         default="data/genie_generated",
         help="Directory of tokens, in the format of `video.bin` and `metadata.json`. "
-             "Visualized gif and comic will be written here.",
+        "Visualized gif and comic will be written here.",
     )
     parser.add_argument(
         "--offset", type=int, default=0, help="Offset to start generating images from"
     )
+    parser.add_argument("--fps", type=int, default=2, help="Frames per second")
     parser.add_argument(
-        "--fps", type=int, default=2, help="Frames per second"
+        "--max_images",
+        type=int,
+        default=None,
+        help="Maximum number of images to generate. None for all.",
     )
     parser.add_argument(
-        "--max_images", type=int, default=None, help="Maximum number of images to generate. None for all."
-    )
-    parser.add_argument(
-        "--disable_comic", action="store_true",
+        "--disable_comic",
+        action="store_true",
         help="Comic generation assumes `token_dir` follows the same format as generate: e.g., "
-             "`prompt | predictions | gtruth` in `video.bin`, `window_size` in `metadata.json`."
-             "Therefore, comic should be disabled when visualizing videos without this format, such as the dataset."
+        "`prompt | predictions | gtruth` in `video.bin`, `window_size` in `metadata.json`."
+        "Therefore, comic should be disabled when visualizing videos without this format, such as the dataset.",
     )
     args = parser.parse_args()
 
@@ -69,16 +71,19 @@ def export_to_gif(frames: list, output_gif_path: str, fps: int):
     - fps (int): Desired frames per second.
     """
     # Convert numpy arrays to PIL Images if needed
-    pil_frames = [Image.fromarray(frame) if isinstance(
-        frame, np.ndarray) else frame for frame in frames]
+    pil_frames = [
+        Image.fromarray(frame) if isinstance(frame, np.ndarray) else frame for frame in frames
+    ]
 
     duration_ms = 1000 / fps
-    pil_frames[0].save(output_gif_path.replace(".mp4", ".gif"),
-                       format="GIF",
-                       append_images=pil_frames[1:],
-                       save_all=True,
-                       duration=duration_ms,
-                       loop=0)
+    pil_frames[0].save(
+        output_gif_path.replace(".mp4", ".gif"),
+        format="GIF",
+        append_images=pil_frames[1:],
+        save_all=True,
+        duration=duration_ms,
+        loop=0,
+    )
 
 
 def rescale_magvit_output(magvit_output):
@@ -87,7 +92,7 @@ def rescale_magvit_output(magvit_output):
 
     Important: clip to [0, 255]
     """
-    rescaled_output = ((magvit_output.detach().cpu() + 1) * 127.5)
+    rescaled_output = (magvit_output.detach().cpu() + 1) * 127.5
     clipped_output = torch.clamp(rescaled_output, 0, 255).to(dtype=torch.uint8)
     return clipped_output
 
@@ -108,12 +113,18 @@ def decode_latents_wrapper(batch_size=16, tokenizer_ckpt="data/magvit2.ckpt", ma
         decoded_imgs = []
 
         for shard_ind in range(math.ceil(len(video_data) / batch_size)):
-            batch = torch.from_numpy(video_data[shard_ind * batch_size: (shard_ind + 1) * batch_size].astype(np.int64))
+            batch = torch.from_numpy(
+                video_data[shard_ind * batch_size : (shard_ind + 1) * batch_size].astype(np.int64)
+            )
             if model.use_ema:
                 with model.ema_scope():
-                    quant = model.quantize.get_codebook_entry(rearrange(batch, "b h w -> b (h w)"),
-                                                              bhwc=batch.shape + (model.quantize.codebook_dim,)).flip(1)
-                    decoded_imgs.append(((rescale_magvit_output(model.decode(quant.to(device=device, dtype=dtype))))))
+                    quant = model.quantize.get_codebook_entry(
+                        rearrange(batch, "b h w -> b (h w)"),
+                        bhwc=batch.shape + (model.quantize.codebook_dim,),
+                    ).flip(1)
+                    decoded_imgs.append(
+                        (rescale_magvit_output(model.decode(quant.to(device=device, dtype=dtype))))
+                    )
             if max_images and len(decoded_imgs) * batch_size >= max_images:
                 break
 
@@ -141,7 +152,12 @@ def caption_image(pil_image: Image, caption: str):
 
     # Center text (`align` keyword doesn't work)
     _, _, text_w, text_h = draw.textbbox((0, 0), caption, font_size=font_size)
-    draw.text(((width - text_w) / 2, (border_size - text_h) / 2), caption, fill="black", font_size=font_size)
+    draw.text(
+        ((width - text_w) / 2, (border_size - text_h) / 2),
+        caption,
+        fill="black",
+        font_size=font_size,
+    )
 
     return new_image
 
@@ -151,18 +167,24 @@ def main():
     args = parse_args()
 
     # Load tokens
-    token_dataset = RawTokenDataset(args.token_dir, 1, filter_interrupts=False, filter_overlaps=False)
+    token_dataset = RawTokenDataset(
+        args.token_dir, 1, filter_interrupts=False, filter_overlaps=False
+    )
     video_tokens = token_dataset.data
     metadata = token_dataset.metadata
 
-    video_frames = decode_latents_wrapper(max_images=args.max_images)(video_tokens[args.offset::args.stride])
+    video_frames = decode_latents_wrapper(max_images=args.max_images)(
+        video_tokens[args.offset :: args.stride]
+    )
     output_gif_path = os.path.join(args.token_dir, f"generated_offset{args.offset}.gif")
 
     # `generate` should populate `metadata.json` with these keys, while ground truth metadata does not have them
     is_generated_data = all(key in metadata for key in ("num_prompt_frames", "window_size"))
     if is_generated_data:
         if video_tokens.shape[0] != metadata["window_size"] * 2 - metadata["num_prompt_frames"]:
-            raise ValueError(f"Unexpected {video_tokens.shape=} given {metadata['window_size']=}, {metadata['num_prompt_frames']=}")
+            raise ValueError(
+                f"Unexpected {video_tokens.shape=} given {metadata['window_size']=}, {metadata['num_prompt_frames']=}"
+            )
 
         captioned_frames = []
         for i, frame in enumerate(video_frames):
@@ -182,7 +204,11 @@ def main():
     print(f"Saved to {output_gif_path}")
 
     if not args.disable_comic:
-        fig, axs = plt.subplots(nrows=2, ncols=metadata["window_size"], figsize=(3 * metadata["window_size"], 3 * 2))
+        fig, axs = plt.subplots(
+            nrows=2,
+            ncols=metadata["window_size"],
+            figsize=(3 * metadata["window_size"], 3 * 2),
+        )
         for i, image in enumerate(video_frames):
             if i < metadata["num_prompt_frames"]:
                 curr_axs = [axs[0, i], axs[1, i]]

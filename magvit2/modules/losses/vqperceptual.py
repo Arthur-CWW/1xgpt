@@ -16,32 +16,33 @@ class DummyLoss(nn.Module):
         super().__init__()
 
 
-def adopt_weight(weight, global_step, threshold=0, value=0.):
+def adopt_weight(weight, global_step, threshold=0, value=0.0):
     if global_step < threshold:
         weight = value
     return weight
 
 
 def hinge_d_loss(logits_real, logits_fake):
-    loss_real = torch.mean(F.relu(1. - logits_real))
-    loss_fake = torch.mean(F.relu(1. + logits_fake))
+    loss_real = torch.mean(F.relu(1.0 - logits_real))
+    loss_fake = torch.mean(F.relu(1.0 + logits_fake))
     d_loss = 0.5 * (loss_real + loss_fake)
     return d_loss
 
 
 def vanilla_d_loss(logits_real, logits_fake):
     d_loss = 0.5 * (
-        torch.mean(torch.nn.functional.softplus(-logits_real)) +
-        torch.mean(torch.nn.functional.softplus(logits_fake)))
+        torch.mean(torch.nn.functional.softplus(-logits_real))
+        + torch.mean(torch.nn.functional.softplus(logits_fake))
+    )
     return d_loss
 
 
 def _sigmoid_cross_entropy_with_logits(labels, logits):
     """
-    non-saturating loss 
+    non-saturating loss
     """
     zeros = torch.zeros_like(logits, dtype=logits.dtype)
-    condition = (logits >= zeros)
+    condition = logits >= zeros
     relu_logits = torch.where(condition, logits, zeros)
     neg_abs_logits = torch.where(condition, -logits, logits)
     return relu_logits - logits * labels + torch.log1p(torch.exp(neg_abs_logits))
@@ -54,10 +55,10 @@ def non_saturate_gen_loss(logits_fake):
     B, _, _, _ = logits_fake.shape
     logits_fake = logits_fake.reshape(B, -1)
     logits_fake = torch.mean(logits_fake, dim=-1)
-    gen_loss = torch.mean(_sigmoid_cross_entropy_with_logits(
-        labels = torch.ones_like(logits_fake), logits=logits_fake
-    ))
-    
+    gen_loss = torch.mean(
+        _sigmoid_cross_entropy_with_logits(labels=torch.ones_like(logits_fake), logits=logits_fake)
+    )
+
     return gen_loss
 
 
@@ -69,10 +70,11 @@ def non_saturate_discriminator_loss(logits_real, logits_fake):
     logits_real = logits_real.mean(dim=-1)
 
     real_loss = _sigmoid_cross_entropy_with_logits(
-        labels=torch.ones_like(logits_real), logits=logits_real)
+        labels=torch.ones_like(logits_real), logits=logits_real
+    )
 
     fake_loss = _sigmoid_cross_entropy_with_logits(
-        labels= torch.zeros_like(logits_fake), logits=logits_fake
+        labels=torch.zeros_like(logits_fake), logits=logits_fake
     )
 
     discr_loss = real_loss.mean() + fake_loss.mean()
@@ -80,19 +82,24 @@ def non_saturate_discriminator_loss(logits_real, logits_fake):
 
 
 class LeCAM_EMA(object):
-    def __init__(self, init=0., decay=0.999):
+    def __init__(self, init=0.0, decay=0.999):
         self.logits_real_ema = init
         self.logits_fake_ema = init
         self.decay = decay
-    
+
     def update(self, logits_real, logits_fake):
-        self.logits_real_ema = self.logits_real_ema * self.decay + torch.mean(logits_real).item() * (1- self.decay) 
-        self.logits_fake_ema = self.logits_fake_ema * self.decay + torch.mean(logits_fake).item() * (1 - self.decay)
+        self.logits_real_ema = self.logits_real_ema * self.decay + torch.mean(
+            logits_real
+        ).item() * (1 - self.decay)
+        self.logits_fake_ema = self.logits_fake_ema * self.decay + torch.mean(
+            logits_fake
+        ).item() * (1 - self.decay)
 
 
 def lecam_reg(real_pred, fake_pred, lecam_ema):
-    reg = torch.mean(F.relu(real_pred - lecam_ema.logits_fake_ema).pow(2)) + \
-            torch.mean(F.relu(lecam_ema.logits_real_ema - fake_pred).pow(2))
+    reg = torch.mean(F.relu(real_pred - lecam_ema.logits_fake_ema).pow(2)) + torch.mean(
+        F.relu(lecam_ema.logits_real_ema - fake_pred).pow(2)
+    )
     return reg
 
 
@@ -116,12 +123,12 @@ class VQLPIPSWithDiscriminator(nn.Module):
         self.lecam_loss_weight = config.lecam_loss_weight
         if self.lecam_loss_weight is not None:
             self.lecam_ema = LeCAM_EMA()
-        
+
         self.discriminator = NLayerDiscriminator(
             input_nc=config.disc_in_channels,
             n_layers=config.disc_num_layers,
             use_actnorm=config.use_actnorm,
-            ndf=config.disc_ndf
+            ndf=config.disc_ndf,
         ).apply(weights_init)
 
         self.discriminator_iter_start = config.disc_start
@@ -149,9 +156,18 @@ class VQLPIPSWithDiscriminator(nn.Module):
         d_weight = d_weight * self.discriminator_weight
         return d_weight
 
-    def forward(self, codebook_loss, loss_break, inputs, reconstructions, optimizer_idx,
-                global_step, last_layer=None, cond=None, split="train"):
-
+    def forward(
+        self,
+        codebook_loss,
+        loss_break,
+        inputs,
+        reconstructions,
+        optimizer_idx,
+        global_step,
+        last_layer=None,
+        cond=None,
+        split="train",
+    ):
         # now the GAN part
         if optimizer_idx == 0:
             ### This code was previously outside this if statement, but seemed unnecessary? - Kevin
@@ -171,55 +187,72 @@ class VQLPIPSWithDiscriminator(nn.Module):
                 logits_fake = self.discriminator(reconstructions.contiguous())
             else:
                 assert self.disc_conditional
-                logits_fake = self.discriminator(torch.cat((reconstructions.contiguous(), cond), dim=1))
+                logits_fake = self.discriminator(
+                    torch.cat((reconstructions.contiguous(), cond), dim=1)
+                )
 
             g_loss = non_saturate_gen_loss(logits_fake)
             if self.gen_loss_weight is None:
                 try:
-                    d_weight = self.calculate_adaptive_weight(nll_loss, g_loss, last_layer=last_layer)
+                    d_weight = self.calculate_adaptive_weight(
+                        nll_loss, g_loss, last_layer=last_layer
+                    )
                 except RuntimeError:
                     assert not self.training
                     d_weight = torch.tensor(0.0)
             else:
                 d_weight = torch.tensor(self.gen_loss_weight)
 
-            disc_factor = adopt_weight(self.disc_factor, global_step, threshold=self.discriminator_iter_start)
+            disc_factor = adopt_weight(
+                self.disc_factor, global_step, threshold=self.discriminator_iter_start
+            )
 
             if not self.training:
                 real_g_loss = disc_factor * g_loss
             g_loss = d_weight * disc_factor * g_loss
 
-            scale_codebook_loss = self.codebook_weight * codebook_loss #entropy_loss
+            scale_codebook_loss = self.codebook_weight * codebook_loss  # entropy_loss
             if self.codebook_enlarge_ratio > 0:
-                scale_codebook_loss = self.codebook_enlarge_ratio * (max(0, 1 - global_step / self.codebook_enlarge_steps)) * scale_codebook_loss + scale_codebook_loss
+                scale_codebook_loss = (
+                    self.codebook_enlarge_ratio
+                    * (max(0, 1 - global_step / self.codebook_enlarge_steps))
+                    * scale_codebook_loss
+                    + scale_codebook_loss
+                )
 
-            loss = nll_loss + g_loss + scale_codebook_loss + loss_break.commitment * self.commit_weight
+            loss = (
+                nll_loss + g_loss + scale_codebook_loss + loss_break.commitment * self.commit_weight
+            )
             if disc_factor == 0:
-                log = {"{}/total_loss".format(split): loss.clone().detach(),
-                       "{}/per_sample_entropy".format(split): loss_break.per_sample_entropy.detach(),
-                       "{}/codebook_entropy".format(split): loss_break.codebook_entropy.detach(),
-                       "{}/commit_loss".format(split): loss_break.commitment.detach(),
-                       "{}/nll_loss".format(split): nll_loss.detach(),
-                       "{}/reconstruct_loss".format(split): rec_loss.detach().mean(),
-                       "{}/perceptual_loss".format(split): p_loss.detach().mean(),
-                       "{}/d_weight".format(split): torch.tensor(0.0),
-                       "{}/disc_factor".format(split): torch.tensor(0.0),
-                       "{}/g_loss".format(split): torch.tensor(0.0),
-                       }
+                log = {
+                    "{}/total_loss".format(split): loss.clone().detach(),
+                    "{}/per_sample_entropy".format(split): loss_break.per_sample_entropy.detach(),
+                    "{}/codebook_entropy".format(split): loss_break.codebook_entropy.detach(),
+                    "{}/commit_loss".format(split): loss_break.commitment.detach(),
+                    "{}/nll_loss".format(split): nll_loss.detach(),
+                    "{}/reconstruct_loss".format(split): rec_loss.detach().mean(),
+                    "{}/perceptual_loss".format(split): p_loss.detach().mean(),
+                    "{}/d_weight".format(split): torch.tensor(0.0),
+                    "{}/disc_factor".format(split): torch.tensor(0.0),
+                    "{}/g_loss".format(split): torch.tensor(0.0),
+                }
             else:
                 if self.training:
-                    log = {"{}/total_loss".format(split): loss.clone().detach(),
-                           "{}/per_sample_entropy".format(split): loss_break.per_sample_entropy.detach(),
-                           "{}/codebook_entropy".format(split): loss_break.codebook_entropy.detach(),
-                           "{}/commit_loss".format(split): loss_break.commitment.detach(),
-                           "{}/entropy_loss".format(split): codebook_loss.detach(),
-                           "{}/nll_loss".format(split): nll_loss.detach(),
-                           "{}/reconstruct_loss".format(split): rec_loss.detach().mean(),
-                           "{}/perceptual_loss".format(split): p_loss.detach().mean(),
-                           "{}/d_weight".format(split): d_weight,
-                           "{}/disc_factor".format(split): torch.tensor(disc_factor),
-                           "{}/g_loss".format(split): g_loss.detach(),
-                           }
+                    log = {
+                        "{}/total_loss".format(split): loss.clone().detach(),
+                        "{}/per_sample_entropy".format(
+                            split
+                        ): loss_break.per_sample_entropy.detach(),
+                        "{}/codebook_entropy".format(split): loss_break.codebook_entropy.detach(),
+                        "{}/commit_loss".format(split): loss_break.commitment.detach(),
+                        "{}/entropy_loss".format(split): codebook_loss.detach(),
+                        "{}/nll_loss".format(split): nll_loss.detach(),
+                        "{}/reconstruct_loss".format(split): rec_loss.detach().mean(),
+                        "{}/perceptual_loss".format(split): p_loss.detach().mean(),
+                        "{}/d_weight".format(split): d_weight,
+                        "{}/disc_factor".format(split): torch.tensor(disc_factor),
+                        "{}/g_loss".format(split): g_loss.detach(),
+                    }
                 else:
                     # validation only monitor the reconstruct_loss and p_loss
                     log = {
@@ -235,13 +268,19 @@ class VQLPIPSWithDiscriminator(nn.Module):
                 logits_real = self.discriminator(inputs.contiguous().detach())
                 logits_fake = self.discriminator(reconstructions.contiguous().detach())
             else:
-                logits_real = self.discriminator(torch.cat((inputs.contiguous().detach(), cond), dim=1))
-                logits_fake = self.discriminator(torch.cat((reconstructions.contiguous().detach(), cond), dim=1))
+                logits_real = self.discriminator(
+                    torch.cat((inputs.contiguous().detach(), cond), dim=1)
+                )
+                logits_fake = self.discriminator(
+                    torch.cat((reconstructions.contiguous().detach(), cond), dim=1)
+                )
 
-            disc_factor = adopt_weight(self.disc_factor, global_step, threshold=self.discriminator_iter_start)
-            #---------------------------------------------------------------------------------------
+            disc_factor = adopt_weight(
+                self.disc_factor, global_step, threshold=self.discriminator_iter_start
+            )
+            # ---------------------------------------------------------------------------------------
             # Non-Saturate Loss is the Format of GAN Training, for D Loss, We still adopt Hinge Loss
-            #---------------------------------------------------------------------------------------
+            # ---------------------------------------------------------------------------------------
             if self.lecam_loss_weight is not None:
                 self.lecam_ema.update(logits_real, logits_fake)
                 lecam_loss = lecam_reg(logits_real, logits_fake, self.lecam_ema)
@@ -251,21 +290,23 @@ class VQLPIPSWithDiscriminator(nn.Module):
                 non_saturate_d_loss = self.disc_loss(logits_real, logits_fake)
                 d_loss = disc_factor * non_saturate_d_loss
 
-            # d_loss = disc_factor * 
+            # d_loss = disc_factor *
             if disc_factor == 0:
-                log = {"{}/disc_loss".format(split): torch.tensor(0.0),
-                       "{}/logits_real".format(split): torch.tensor(0.0),
-                       "{}/logits_fake".format(split): torch.tensor(0.0),
-                       "{}/disc_factor".format(split): torch.tensor(disc_factor),
-                       "{}/lecam_loss".format(split): lecam_loss.detach(),
-                       "{}/non_saturated_d_loss".format(split): non_saturate_d_loss.detach(),
-                       }
+                log = {
+                    "{}/disc_loss".format(split): torch.tensor(0.0),
+                    "{}/logits_real".format(split): torch.tensor(0.0),
+                    "{}/logits_fake".format(split): torch.tensor(0.0),
+                    "{}/disc_factor".format(split): torch.tensor(disc_factor),
+                    "{}/lecam_loss".format(split): lecam_loss.detach(),
+                    "{}/non_saturated_d_loss".format(split): non_saturate_d_loss.detach(),
+                }
             else:
-                log = {"{}/disc_loss".format(split): d_loss.clone().detach().mean(),
-                       "{}/logits_real".format(split): logits_real.detach().mean(),
-                       "{}/logits_fake".format(split): logits_fake.detach().mean(),
-                       "{}/disc_factor".format(split): torch.tensor(disc_factor),
-                       "{}/lecam_loss".format(split): lecam_loss.detach(),
-                       "{}/non_saturated_d_loss".format(split): non_saturate_d_loss.detach(),
-                       }
+                log = {
+                    "{}/disc_loss".format(split): d_loss.clone().detach().mean(),
+                    "{}/logits_real".format(split): logits_real.detach().mean(),
+                    "{}/logits_fake".format(split): logits_fake.detach().mean(),
+                    "{}/disc_factor".format(split): torch.tensor(disc_factor),
+                    "{}/lecam_loss".format(split): lecam_loss.detach(),
+                    "{}/non_saturated_d_loss".format(split): non_saturate_d_loss.detach(),
+                }
             return d_loss, log

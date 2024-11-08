@@ -8,7 +8,8 @@ from genie.factorization_utils import factorize_labels
 
 
 class AvgMetric:
-    """ Records a running sum and count to compute the mean. """
+    """Records a running sum and count to compute the mean."""
+
     def __init__(self):
         self.total = 0
         self.count = 0
@@ -25,7 +26,9 @@ class AvgMetric:
         return self.total / self.count
 
 
-def decode_tokens(reshaped_token_ids: torch.LongTensor, decode_latents: Callable) -> torch.ByteTensor:
+def decode_tokens(
+    reshaped_token_ids: torch.LongTensor, decode_latents: Callable
+) -> torch.ByteTensor:
     """
     Converts quantized latent space tokens to images.
 
@@ -36,16 +39,20 @@ def decode_tokens(reshaped_token_ids: torch.LongTensor, decode_latents: Callable
     Returns:
         (B, T, 3, 256, 256)
     """
-    decoded_imgs = decode_latents(rearrange(reshaped_token_ids, "b t h w -> (b t) h w").cpu().numpy())
-    decoded_tensor = torch.stack([transforms_f.pil_to_tensor(pred_img) for pred_img in decoded_imgs])
+    decoded_imgs = decode_latents(
+        rearrange(reshaped_token_ids, "b t h w -> (b t) h w").cpu().numpy()
+    )
+    decoded_tensor = torch.stack(
+        [transforms_f.pil_to_tensor(pred_img) for pred_img in decoded_imgs]
+    )
     return rearrange(decoded_tensor, "(b t) c H W -> b t c H W", b=reshaped_token_ids.size(0))
 
 
 def compute_loss(
-        labels_flat: torch.LongTensor,
-        factored_logits: torch.FloatTensor,
-        num_factored_vocabs: int = 2,
-        factored_vocab_size: int = 512,
+    labels_flat: torch.LongTensor,
+    factored_logits: torch.FloatTensor,
+    num_factored_vocabs: int = 2,
+    factored_vocab_size: int = 512,
 ) -> float:
     """
     If applicable (model returns logits), compute the cross entropy loss.
@@ -62,27 +69,38 @@ def compute_loss(
     Returns:
         Cross entropy loss
     """
-    assert factored_logits.dim() == 6 \
-           and factored_logits.size()[:3] == (labels_flat.size(0), factored_vocab_size, num_factored_vocabs), \
-           f"Shape of `logits` should be (B, {factored_vocab_size}, {num_factored_vocabs}, T-1, H, W)"
+    assert factored_logits.dim() == 6 and factored_logits.size()[:3] == (
+        labels_flat.size(0),
+        factored_vocab_size,
+        num_factored_vocabs,
+    ), f"Shape of `logits` should be (B, {factored_vocab_size}, {num_factored_vocabs}, T-1, H, W)"
     t = factored_logits.size(3) + 1
     h, w = factored_logits.size()[-2:]
-    assert t * h * w == labels_flat.size(1), "Shape of `factored_logits` does not match flattened latent image size."
+    assert t * h * w == labels_flat.size(
+        1
+    ), "Shape of `factored_logits` does not match flattened latent image size."
 
     labels_THW = rearrange(labels_flat, "b (t h w) -> b t h w", t=t, h=h, w=w)
     labels_THW = labels_THW[:, 1:].to(factored_logits.device)
 
     factored_labels = factorize_labels(labels_THW, num_factored_vocabs, factored_vocab_size)
-    return torch.nn.functional.cross_entropy(factored_logits, factored_labels, reduction="none")\
-        .sum(dim=1).mean().item()  # Final loss is the sum of the two losses across the size-512 vocabularies
+    return (
+        torch.nn.functional.cross_entropy(factored_logits, factored_labels, reduction="none")
+        .sum(dim=1)
+        .mean()
+        .item()
+    )  # Final loss is the sum of the two losses across the size-512 vocabularies
 
 
-def compute_lpips(frames_a: torch.ByteTensor, frames_b: torch.ByteTensor, lpips_func: Callable) -> list:
+def compute_lpips(
+    frames_a: torch.ByteTensor, frames_b: torch.ByteTensor, lpips_func: Callable
+) -> list:
     """
     Given two batches of video data, of shape (B, T, 3, 256, 256), computes the LPIPS score on frame-by-frame level.
     Cannot use `lpips_func` directly because it expects at most 4D input.
     """
     # LPIPS expects pixel values between [-1, 1]
-    flattened_a, flattened_b = [rearrange(frames / 127.5 - 1, "b t c H W -> (b t) c H W")
-                                for frames in (frames_a, frames_b)]
+    flattened_a, flattened_b = [
+        rearrange(frames / 127.5 - 1, "b t c H W -> (b t) c H W") for frames in (frames_a, frames_b)
+    ]
     return lpips_func(flattened_a, flattened_b).flatten().tolist()

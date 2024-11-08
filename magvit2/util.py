@@ -4,17 +4,11 @@ import requests
 from tqdm import tqdm
 
 
-URL_MAP = {
-    "vgg_lpips": "https://heibox.uni-heidelberg.de/f/607503859c864bc1b30b/?dl=1"
-}
+URL_MAP = {"vgg_lpips": "https://heibox.uni-heidelberg.de/f/607503859c864bc1b30b/?dl=1"}
 
-CKPT_MAP = {
-    "vgg_lpips": "vgg.pth"
-}
+CKPT_MAP = {"vgg_lpips": "vgg.pth"}
 
-MD5_MAP = {
-    "vgg_lpips": "d507d7349b931f0638a25a48a722f98a"
-}
+MD5_MAP = {"vgg_lpips": "d507d7349b931f0638a25a48a722f98a"}
 
 
 def download(url, local_path, chunk_size=1024):

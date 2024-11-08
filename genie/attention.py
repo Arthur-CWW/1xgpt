@@ -6,6 +6,7 @@ import os
 
 XFORMERS_DISABLED = os.environ.get("XFORMERS_DISABLED", "false").lower() == "true"
 
+
 class BasicSelfAttention(nn.Module):
     def __init__(
         self,
@@ -23,7 +24,7 @@ class BasicSelfAttention(nn.Module):
         self.head_dim = d_model // num_heads
 
         # Scaling by 8 to be equal when head_dim=64
-        self.scale = 8/self.head_dim if use_mup else self.head_dim**-0.5
+        self.scale = 8 / self.head_dim if use_mup else self.head_dim**-0.5
         self.qkv = nn.Linear(d_model, d_model * 3, bias=qkv_bias)
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj = nn.Linear(d_model, d_model, bias=proj_bias)
@@ -35,7 +36,9 @@ class BasicSelfAttention(nn.Module):
 
     def forward(self, x: torch.Tensor, causal: bool = False) -> torch.Tensor:
         B, N, C = x.shape
-        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        qkv = (
+            self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        )
 
         q, k, v = qkv[0], qkv[1], qkv[2]
 
@@ -50,7 +53,7 @@ class BasicSelfAttention(nn.Module):
 
         if causal:
             mask_value = -torch.finfo(attn.dtype).max
-            i, j = attn.shape[-2:]            
+            i, j = attn.shape[-2:]
             mask = ~torch.tril(torch.ones(i, j)).bool().to(attn.device)
             attn = attn.masked_fill(mask, mask_value)
 
@@ -63,7 +66,7 @@ class BasicSelfAttention(nn.Module):
 
 class MemoryEfficientAttention(BasicSelfAttention):
     # NOTE: Mem-eff attention from xformers is actually Flash Attention 2
-        
+
     def forward(self, x: torch.Tensor, causal: bool = False) -> torch.Tensor:
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim)
@@ -81,6 +84,7 @@ class MemoryEfficientAttention(BasicSelfAttention):
 
         x = self.proj(x)
         return x
+
 
 if XFORMERS_DISABLED:
     SelfAttention = BasicSelfAttention

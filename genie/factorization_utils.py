@@ -8,7 +8,14 @@ class FactorizedEmbedding(nn.Module):
     Each token's embedding is the sum of the embeddings in each factorized vocabulary.
     Equivalent to nn.Embedding when `num_factored_vocabs` = 1.
     """
-    def __init__(self, factored_vocab_size: int, num_factored_vocabs: int, d_model: int, mask_token_id: int):
+
+    def __init__(
+        self,
+        factored_vocab_size: int,
+        num_factored_vocabs: int,
+        d_model: int,
+        mask_token_id: int,
+    ):
         """
 
         Args:
@@ -22,8 +29,9 @@ class FactorizedEmbedding(nn.Module):
         self.d_model = d_model
         self.mask_token_id = mask_token_id
 
-        self.factored_embeds = nn.ParameterList([nn.Embedding(factored_vocab_size, d_model)
-                                                 for _ in range(num_factored_vocabs)])
+        self.factored_embeds = nn.ParameterList(
+            [nn.Embedding(factored_vocab_size, d_model) for _ in range(num_factored_vocabs)]
+        )
         self.mask_token_embed = nn.Parameter(torch.zeros(1, d_model))
 
     def forward(self, input_ids: torch.LongTensor) -> torch.FloatTensor:
@@ -45,7 +53,9 @@ class FactorizedEmbedding(nn.Module):
 
         unmasked_embeds = [
             factored_embed(factored_token_ids)
-            for factored_embed, factored_token_ids in zip(self.factored_embeds, factored_token_ids.unbind(-1))
+            for factored_embed, factored_token_ids in zip(
+                self.factored_embeds, factored_token_ids.unbind(-1)
+            )
         ]
 
         embeds[is_not_mask] = torch.sum(torch.stack(unmasked_embeds), dim=0)
@@ -55,7 +65,7 @@ class FactorizedEmbedding(nn.Module):
 def factorize_token_ids(
     token_ids: torch.LongTensor,
     num_factored_vocabs: int = 2,
-    factored_vocab_size: int = 512
+    factored_vocab_size: int = 512,
 ) -> torch.LongTensor:
     """
     `token_ids`: any size tensor with token id values in [0, image_vocab_size = 2**18).
@@ -71,7 +81,7 @@ def factorize_token_ids(
 def unfactorize_token_ids(
     factored_token_ids: torch.LongTensor,
     num_factored_vocabs: int = 2,
-    factored_vocab_size: int = 512
+    factored_vocab_size: int = 512,
 ) -> torch.LongTensor:
     """
     Inverse of `factorize_token_ids`.
@@ -80,14 +90,16 @@ def unfactorize_token_ids(
     Returns:
         Size token_ids.size()[:-1], with values in [0, image_vocab_size = 2**18)
     """
-    powers = factored_vocab_size ** torch.arange(num_factored_vocabs, device=factored_token_ids.device)
+    powers = factored_vocab_size ** torch.arange(
+        num_factored_vocabs, device=factored_token_ids.device
+    )
     return (factored_token_ids * powers).sum(dim=-1)
 
 
 def factorize_labels(
     labels_THW: torch.LongTensor,
     num_factored_vocabs: int = 2,
-    factored_vocab_size: int = 512
+    factored_vocab_size: int = 512,
 ) -> torch.LongTensor:
     """
     Simply `factorize_token_ids` followed by permuting dimensions.
@@ -102,5 +114,5 @@ def factorize_labels(
 
 def nth_root(x, n):
     root = round(x ** (1 / n))
-    assert root ** n == x, (x, n, root)
+    assert root**n == x, (x, n, root)
     return root
