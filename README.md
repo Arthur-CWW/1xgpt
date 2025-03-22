@@ -38,7 +38,7 @@ We require `Python 3.10` or later. This code was tested with `Python 3.10.12`.
 
 ```
 # Install dependencies and download data
-./build.sh 
+./build.sh
 
 # Source the Python environment
 source venv/bin/activate
@@ -78,18 +78,18 @@ done
 # Evaluate
 python genie/evaluate.py --checkpoint_dir 1x-technologies/GENIE_138M --maskgit_steps 2
 ```
- 
+
 ## Data Description
 
 [See the Dataset Card on Huggingface](https://huggingface.co/datasets/1x-technologies/worldmodel).
 
 The training dataset is stored in the `data/train_v1.1` directory.
 
-## Participating in the Challenges: 
+## Participating in the Challenges:
 
 Please read the [Additional Challenge Details](#additional-challenge-details) first for clarification on rules.
 
-Email source code + build script + some info about your approach to challenge@1x.tech. We will evaluate your submission on our held-out dataset and email you back with the results. 
+Email source code + build script + some info about your approach to challenge@1x.tech. We will evaluate your submission on our held-out dataset and email you back with the results.
 
 Please send us the following:
 - your chosen username (can be your real name or a pseudonym, will be tied 1:1 to your email)
@@ -120,14 +120,14 @@ There are different scenarios for evaluation, which vary in the degree of ground
 In decreasing order of context, these scenarios are:
 - **Fully Autoregressive**: the model receives a predetermined number of ground truth frames and autoregressively predicts all remaining frames.
 - **Temporally Teacher-forced**: the model receives all ground truth frames before the current frame and autoregressively predicts all tokens in the current frame.
-- **Fully Teacher-forced**: the model receives all ground truth tokens before the current token, 
+- **Fully Teacher-forced**: the model receives all ground truth tokens before the current token,
 including tokens in the current frame. Only applicable for causal LMs.
 
-As an example, consider predicting the final token of a video, corresponding to the lower right patch of frame 15. 
+As an example, consider predicting the final token of a video, corresponding to the lower right patch of frame 15.
 The context the model receives in each scenario is:
-- Fully Autoregressive: the first $t$x16x16 tokens are ground truth tokens corresponding to the first $t$ prompt frames, 
+- Fully Autoregressive: the first $t$x16x16 tokens are ground truth tokens corresponding to the first $t$ prompt frames,
 and all remaining tokens are autoregressively generated, where $0 < t < 15$ is the predetermined number of prompt frames.
-- Temporally Teacher-forced: the first 15x16x16 tokens are ground truth tokens corresponding to the first 15 frames, 
+- Temporally Teacher-forced: the first 15x16x16 tokens are ground truth tokens corresponding to the first 15 frames,
 and all remaining tokens are autoregressively generated.
 - Fully Teacher-forced: all previous (16x16x16 - 1) tokens are ground truth tokens.
 
@@ -169,7 +169,7 @@ These are evaluation results on `data/val_v1.1`.
 
 Beyond the World Model Challenge, we also want to make the challenges and datasets more useful for *your* research questions. Want more data interacting with humans? More safety-critical tasks like carrying cups of hot coffee without spilling? More dextrous tool use? Robots working with other robots? Robots dressing themselves in the mirror? Think of 1X as the operations team for getting you high quality humanoid data in extremely diverse scenarios.
 
-Email challenge@1x.tech with your requests (and why you think the data is important) and we will try to include it in a future data release. You can also discuss your data questions with the community on [Discord](https://discord.gg/UMnzbTkw). 
+Email challenge@1x.tech with your requests (and why you think the data is important) and we will try to include it in a future data release. You can also discuss your data questions with the community on [Discord](https://discord.gg/UMnzbTkw).
 
 We also welcome donors to help us increase the bounty.
 

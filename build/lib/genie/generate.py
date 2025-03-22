@@ -123,8 +123,9 @@ def main():
     # write to output
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    nparr: np.ndarray = outputs.cpu().numpy().astype(np.dtype(val_dataset.metadata["token_dtype"]))
-    nparr.tofile(output_dir / "video.bin")
+    outputs.cpu().numpy().astype(np.dtype(val_dataset.metadata["token_dtype"])).tofile(
+        output_dir / "video.bin"
+    )
 
     with open(output_dir / "metadata.json", "w") as f:
         json.dump(

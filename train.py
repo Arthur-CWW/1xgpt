@@ -250,6 +250,7 @@ def parse_args():
     )
 
     args = parser.parse_args()
+    print(args)
 
     return args
 
@@ -271,14 +272,21 @@ def save_checkpoint(model, accelerator, args, filename):
 
 
 @torch.no_grad()
-def visualize(accelerator, model, dataloader, window_size, metrics_prefix="eval", max_steps=1):
+def visualize(
+    accelerator: Accelerator,
+    model: torch.nn.Module,
+    dataloader: DataLoader,
+    window_size: int,
+    metrics_prefix: str = "eval",
+    max_steps: int = 1,
+):
     """
     Visualizes model's autoregressive generation outputs, logged to wandb.
 
     metrics_prefix: each metric is logged as f"{metrics_prefix}_{metric_key}". Also used in name of wandb figure.
     """
     accelerator.wait_for_everyone()
-    unwrapped_model = accelerator.unwrap_model(model)
+    unwrapped_model: torch.nn.Module = accelerator.unwrap_model(model)
 
     metadata = dataloader.dataset.metadata
     decode_latents = decode_latents_wrapper()  # re-initializing every time to save memory
@@ -867,7 +875,7 @@ def main():
             save_checkpoint(model, accelerator, args, f"epoch_{epoch}")
 
     accelerator.end_training()
-    save_checkpoint(model, accelerator, args, f"final_checkpt")
+    save_checkpoint(model, accelerator, args, "final_checkpt")
 
 
 if __name__ == "__main__":

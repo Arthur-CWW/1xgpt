@@ -4,18 +4,18 @@ from functools import partial
 
 
 # step scheduler
-def fn_LinearWarmup(warmup_steps: int, step: int):
+def fn_LinearWarmup(warmup_steps, step):
     if step < warmup_steps:  # linear warmup
         return float(step) / float(max(1, warmup_steps))
     else:
         return 1.0
 
 
-def Scheduler_LinearWarmup(warmup_steps: int):
+def Scheduler_LinearWarmup(warmup_steps):
     return partial(fn_LinearWarmup, warmup_steps)
 
 
-def fn_LinearWarmup_CosineDecay(warmup_steps: int, max_steps: int, multipler_min: float, step: int):
+def fn_LinearWarmup_CosineDecay(warmup_steps, max_steps, multipler_min, step):
     if step < warmup_steps:  # linear warmup
         return float(step) / float(max(1, warmup_steps))
     else:  # cosine learning rate schedule
@@ -25,5 +25,5 @@ def fn_LinearWarmup_CosineDecay(warmup_steps: int, max_steps: int, multipler_min
         return max(multipler, multipler_min)
 
 
-def Scheduler_LinearWarmup_CosineDecay(warmup_steps: int, max_steps: int, multipler_min: float):
+def Scheduler_LinearWarmup_CosineDecay(warmup_steps, max_steps, multipler_min):
     return partial(fn_LinearWarmup_CosineDecay, warmup_steps, max_steps, multipler_min)

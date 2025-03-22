@@ -1,13 +1,11 @@
 """Stripped version of https://github.com/richzhang/PerceptualSimilarity/tree/master/models"""
 
-# %%
 import torch
 import torch.nn as nn
 import torchvision
 from torchvision import models
 from collections import namedtuple
 
-#
 from magvit2.util import get_ckpt_path
 
 
@@ -134,32 +132,10 @@ class vgg16(torch.nn.Module):
         return out
 
 
-def normalize_tensor(
-    x: torch.Tensor,  # x: (b, c, h, w)
-    eps: float = 1e-10,
-) -> torch.Tensor:
-    norm_factor = torch.sqrt(torch.sum(x**2, dim=1, keepdim=True))  # (b, c, h, w)
-    # We are normalising along the channel dimension
+def normalize_tensor(x, eps=1e-10):
+    norm_factor = torch.sqrt(torch.sum(x**2, dim=1, keepdim=True))
     return x / (norm_factor + eps)
 
 
-def spatial_average(x: torch.Tensor, keepdim: bool = True) -> torch.Tensor:
-    # x: (b, c, h, w)
-    return x.mean([2, 3], keepdim=keepdim)  # (b, c)
-
-
-# Test normalize_tensor with a random tensor
-if __name__ == "__main__":
-    # Create a random tensor (batch_size=2, channels=3, height=64, width=64)
-    test_tensor = torch.randn(2, 3, 64, 64) * 40 + 128
-    print("Original tensor shape:", test_tensor.mean(), test_tensor.std())
-
-    # Normalize the tensor
-    normalized = normalize_tensor(test_tensor)
-    print("Normalized tensor shape:", normalized[:, 1, :, :].mean(), normalized[:, 1, :, :].std())
-    # print("Normalized tensor shape:", normalized.mean(), normalized.std())
-
-    # Verify the normalization by checking the L2 norm
-    norms = torch.sqrt(torch.sum(normalized**2, dim=1))
-    same = torch.allclose(norms, torch.ones_like(norms))
-    print("All L2 norms are close to 1:", same)
+def spatial_average(x, keepdim=True):
+    return x.mean([2, 3], keepdim=keepdim)

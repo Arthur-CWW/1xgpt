@@ -1,10 +1,7 @@
-# %%
 from torch import nn, Tensor
-import einops
+from einops import rearrange
 
 from genie.attention import SelfAttention
-
-# %%
 
 
 class Mlp(nn.Module):
@@ -26,9 +23,6 @@ class Mlp(nn.Module):
         x = self.drop(self.act(self.fc1(x)))
         x = self.drop(self.fc2(x))
         return x
-
-
-# %%
 
 
 class STBlock(nn.Module):
@@ -76,16 +70,16 @@ class STBlock(nn.Module):
     def forward(self, x_TSC: Tensor) -> Tensor:
         # Process attention spatially
         T, S = x_TSC.size(1), x_TSC.size(2)
-        x_SC = einops.rearrange(x_TSC, "B T S C -> (B T) S C")
+        x_SC = rearrange(x_TSC, "B T S C -> (B T) S C")
         x_SC = x_SC + self.spatial_attn(self.norm1(x_SC))
 
         # Process attention temporally
-        x_TC = einops.rearrange(x_SC, "(B T) S C -> (B S) T C", T=T)
+        x_TC = rearrange(x_SC, "(B T) S C -> (B S) T C", T=T)
         x_TC = x_TC + self.temporal_attn(x_TC, causal=True)
 
         # Apply the MLP
         x_TC = x_TC + self.mlp(self.norm2(x_TC))
-        x_TSC = einops.rearrange(x_TC, "(B S) T C -> B T S C", S=S)
+        x_TSC = rearrange(x_TC, "(B S) T C -> B T S C", S=S)
         return x_TSC
 
 
@@ -129,29 +123,3 @@ class STTransformerDecoder(nn.Module):
             x = layer(x)
 
         return x
-
-
-if __name__ == "__main__":
-    import torch
-    import os
-
-    # interesting xformer only works on cuda
-    st_transformer = STTransformerDecoder(
-        num_layers=32,
-        num_heads=8,
-        d_model=256,
-        qkv_bias=False,
-        proj_bias=True,
-        qk_norm=True,
-        use_mup=True,
-        attn_drop=0.0,
-        mlp_ratio=4.0,
-        mlp_bias=True,
-        mlp_drop=0.0,
-    )
-    x = torch.randn(1, 16, 16, 256)
-    y = st_transformer(x)
-    print(y.shape)  # (1, 16, 16, 256)
-
-
-# %%
